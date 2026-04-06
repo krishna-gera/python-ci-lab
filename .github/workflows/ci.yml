@@ -1,26 +1,69 @@
-name: Python CI Pipeline
+name: Python CI Pipeline with DevSecOps
 
 on:
   push:
     branches: [ main ]
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+permissions:
+  security-events: write
+  contents: read
 
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2.4.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  build:
+    needs: security
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ['3.8', '3.9', '3.10']
-
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - name: SAST with Bandit
+        uses: mdegis/bandit-action@v1.1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          path: "."
+          level: high
+          confidence: high
+        continue-on-error: true
+
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - run: |
           python -m pip install --upgrade pip
+          pip install safety
+          safety check --file=requirements.txt -o sarif --output-file safety.sarif
           pip install -r requirements.txt
+          pip install bandit pytest
+
+      - name: SAST with Bandit CLI
+        run: bandit -r . -f sarif -o bandit.sarif
+        continue-on-error: true
+
+      - name: Upload Safety SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: safety.sarif
+        continue-on-error: true
+
+      - name: Upload Bandit SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit.sarif
+        continue-on-error: true
 
       - run: pytest
