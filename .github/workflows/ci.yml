@@ -46,7 +46,7 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install safety
-          safety check --file=requirements.txt -o sarif --output-file safety.sarif
+          safety check --file=requirements.txt -o sarif --output safety.sarif
           pip install -r requirements.txt
           pip install bandit pytest
 
